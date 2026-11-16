@@ -29,3 +29,6 @@ dist/
 
 # 日志（结果目录里单独生成）
 *.log
+
+# 提交主办方的 submission 包，含结果副本与曲线，不进公开仓库
+submission/
