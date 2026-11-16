@@ -1,0 +1,52 @@
+sequenceDiagram
+    autonumber
+    actor U as 使用者
+    participant CLI as run.py / cli.py
+    participant P as pipeline.py
+    participant L as loader.py
+    participant V as validate.py
+    participant LG as ledger.py
+    participant S as solver.py
+    participant B as baseline.py
+    participant E as experiments.py
+    participant M as metrics.py
+    participant A as audit.py
+    participant D as diagnose.py
+    participant W as csv_writer.py
+    participant R as 报告 / 看板 / 自检
+
+    U->>CLI: python run.py [--data-dir ...] [--only ...]
+    CLI->>CLI: 校验参数、固定种子、初始化确定性日志
+    CLI->>P: run_full(cfg)
+    P->>L: load_all(cfg) 只读打开两个 xlsx
+    L-->>P: 五张表 + 备注条数
+    P->>V: validate_dataset(...)
+    V-->>P: Dataset + data_issues.csv
+    P->>LG: 构建 SupplyLedger（480 桶，整数体积）
+    loop 每个场景 S1 / S2 / S3
+        P->>S: RollingSolver.solve(scenario)
+        loop τ = 0..479，事件步触发
+            S->>LG: release(本小时产出格)
+            S->>S: 更新可见提单集（当天及未来 2 自然日）
+            S->>LG: 退回未锁定记录（改配）
+            S->>S: 候选生成 → 硬约束过滤 → 字典序打分 → 取货
+            S->>LG: take(...) 扣减整数体积
+            S->>S: 到期提单锁定，构造提货时刻
+        end
+        S-->>P: Solution（全量配货记录）
+        P->>M: compute(solution, dataset, cfg)
+        M-->>P: Metrics（7 项 + 口径说明）
+        P->>A: audit(solution, dataset, cfg)
+        A-->>P: AuditReport（C1—C5 冲突数）
+        P->>D: diagnose(solution, dataset, cfg)
+        D-->>P: 未配满原因链条
+        P->>W: write_allocation / write_indicators
+    end
+    P->>B: fcfs_baseline(cfg, dataset)
+    B-->>P: 基准 Solution
+    P->>E: run_scenarios + run_scales + compute_improvement
+    E-->>P: 场景表、规模表、改进量
+    P->>R: report_data → build_pdf / build_dashboard / plots
+    R-->>P: build_manifest.json（生成状态如实记录）
+    P->>R: selfcheck.run_all(cfg) 或留待 --self-check
+    R-->>U: 全部结果文件 + 自检记录

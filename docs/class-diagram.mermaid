@@ -1,0 +1,199 @@
+classDiagram
+    class Config {
+        +str data_dir
+        +str wide_file
+        +str bill_file
+        +int seed
+        +int volume_unit
+        +EvalRange eval_range
+        +List~Scenario~ scenarios
+        +List~float~ scales
+        +bool enable_reassign
+        +bool strict_no_overwrite
+        +load(path) Config
+        +validate() None
+    }
+    class TimeAxis {
+        +datetime start
+        +int hours
+        +hour_label(i) str
+        +available_at(i) datetime
+        +is_in_eval_range(i) bool
+        +visible_window(day) tuple
+        +day_of(dt) date
+    }
+    class SensitivityLevel {
+        <<enumeration>>
+        LITHIUM
+        DRY
+        SENSITIVE_GENERAL
+        NONE
+    }
+    class SupplyRow {
+        +str channel_id
+        +str channel_injection
+        +str warehouse_id
+        +str sensitive_raw
+        +SensitivityLevel level
+        +List~int~ hourly_volumes
+    }
+    class SupplyCell {
+        +int row_index
+        +int hour_index
+        +int original_volume
+        +int remaining_volume
+        +datetime available_at
+        +str channel_id
+        +str channel_injection
+        +str warehouse_id
+        +SensitivityLevel level
+        +str pack_date
+        +float density
+    }
+    class DensityRecord {
+        +str channel_id
+        +str warehouse_id
+        +str pack_date
+        +float density
+    }
+    class Waybill {
+        +str bill_no
+        +str dest_port
+        +int plan_volume
+        +datetime earliest_pickup
+        +datetime required_arrival
+        +datetime latest_pickup
+        +datetime planned_departure
+        +str billing_type
+        +str sensitive_raw
+        +SensitivityLevel level
+        +bool is_abnormal
+        +datetime pickup_time
+        +str locked_warehouse
+        +List~AllocationRecord~ records
+    }
+    class CostRate {
+        +Dict~str,float~ by_port
+    }
+    class AllocationRecord {
+        +str bill_no
+        +str channel_id
+        +str warehouse_id
+        +int hour_index
+        +str hour_label
+        +str pickup_time_str
+        +int volume
+    }
+    class DataIssue {
+        +str category
+        +str location
+        +str raw_value
+        +str action
+    }
+    class Dataset {
+        +List~SupplyRow~ supply_rows
+        +List~DensityRecord~ densities
+        +List~Waybill~ waybills
+        +CostRate cost_rates
+        +List~DataIssue~ issues
+        +TimeAxis axis
+        +NotesMeta notes_meta
+    }
+    class SupplyLedger {
+        +Dict~str,SupplyCell~ cells
+        +release(hour_idx) None
+        +take(cell_key, amount) int
+        +refund(record) None
+        +remaining(cell_key) int
+        +candidates(warehouse, level, before) List~SupplyCell~
+    }
+    class Candidate {
+        +SupplyCell cell
+        +int amount
+        +InjectionKind injection
+        +bool exact_sensitive_match
+        +float backlog_hours
+        +float unit_cost
+    }
+    class Scenario {
+        +str name
+        +List~str~ priority_order
+        +score_key(candidate, waybill) tuple
+    }
+    class Solution {
+        +str scenario_name
+        +List~AllocationRecord~ records
+        +Dict~str,Waybill~ waybill_state
+        +DiagnosticsRaw diagnostics
+    }
+    class Metrics {
+        +float fill_rate
+        +float exact_match_rate
+        +float backlog_rate
+        +float primary_injection_rate
+        +float cost
+        +float unallocated_volume
+        +int virtual_warehouse_count
+        +Dict~str,str~ formula_notes
+    }
+    class AuditFinding {
+        +str constraint_id
+        +int checked
+        +int conflicts
+        +List~str~ samples
+    }
+    class AuditReport {
+        +List~AuditFinding~ findings
+        +bool all_pass
+        +str hash_before
+        +str hash_after
+    }
+    class DiagnosisRecord {
+        +str bill_no
+        +int gap_volume
+        +str primary_reason
+        +str reason_chain
+        +str evidence
+    }
+    class Config ..> Dataset : 配置加载参数
+    class Dataset "1" *-- "301" SupplyRow : 聚合
+    class Dataset "1" *-- "2652" Waybill : 聚合
+    class Dataset "1" *-- "6020" DensityRecord : 聚合
+    class Dataset "1" *-- "1" CostRate : 聚合
+    class Dataset "1" *-- "1" TimeAxis : 持有
+    class Dataset "1" *-- "*" DataIssue : 记录
+    class SupplyRow "1" *-- "480" SupplyCell : 展开为小时格
+    class SupplyRow ..> SensitivityLevel : 取最高层级
+    class Waybill ..> SensitivityLevel : 取最高层级
+    class SupplyLedger "1" o-- "*" SupplyCell : 持有可用格
+    class RollingSolver ..> SupplyLedger : 取用与退回
+    class RollingSolver ..> CandidateGenerator : 生成候选
+    class RollingSolver ..> Scenario : 按场景打分
+    class RollingSolver ..> Constraints : 构造期校验
+    class RollingSolver "1" --> "1" Solution : 产出
+    class FcfsBaseline ..> SupplyLedger : 共用账户
+    class FcfsBaseline ..> Constraints : 共用校验
+    class FcfsBaseline "1" --> "1" Solution : 产出
+    class Solution "1" *-- "*" AllocationRecord : 组合
+    class Solution "1" *-- "*" DiagnosisRecord : 附带诊断原料
+    class MetricsCalculator ..> Solution : 读取记录
+    class MetricsCalculator ..> Dataset : 反查原始字段
+    class MetricsCalculator "1" --> "1" Metrics : 产出
+    class Auditor ..> Solution : 逐条核对
+    class Auditor ..> Dataset : 只读重载原始表
+    class Auditor "1" --> "1" AuditReport : 产出
+    class Diagnoser ..> Solution : 读取未配满状态
+    class Diagnoser "1" --> "*" DiagnosisRecord : 产出
+    class ExperimentRunner ..> RollingSolver : 各场景各规模
+    class ExperimentRunner ..> FcfsBaseline : 对照
+    class ExperimentRunner ..> MetricsCalculator : 计算指标
+    class CsvWriter ..> Solution : 写明细
+    class CsvWriter ..> Metrics : 写指标
+    class SelfChecker ..> Auditor : 复用审计
+    class SelfChecker ..> CsvWriter : 复跑比对
+    class Pipeline ..> Loader : 编排
+    class Pipeline ..> RollingSolver : 编排
+    class Pipeline ..> ExperimentRunner : 编排
+    class Pipeline ..> Auditor : 编排
+    class Pipeline ..> CsvWriter : 编排
+    class Pipeline ..> SelfChecker : 编排

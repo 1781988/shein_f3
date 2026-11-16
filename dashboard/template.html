@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多渠道货源与舱位提单动态配载 · 结果看板</title>
+<style>
+  :root{--bg:#f6f8fb;--card:#fff;--ink:#172033;--muted:#5c6b83;--line:#e3e9f2;
+        --blue:#2563eb;--red:#dc2626;--green:#15803d;--amber:#b45309}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:"Microsoft YaHei","SimHei",system-ui,sans-serif;font-size:14px;line-height:1.6}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 56px}
+  header h1{font-size:22px;margin:0 0 6px}
+  header p{margin:0;color:var(--muted);font-size:13px}
+  section{margin-top:26px}
+  h2{font-size:16px;margin:0 0 12px;padding-left:10px;border-left:3px solid var(--blue)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+        box-shadow:0 1px 3px rgba(20,35,60,.04)}
+  .card .name{font-size:12px;color:var(--muted);min-height:32px}
+  .card .value{font-size:22px;font-weight:600;margin-top:6px;color:var(--blue);word-break:break-all}
+  .card .note{font-size:11px;color:var(--muted);margin-top:6px;max-height:52px;overflow:hidden}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border-bottom:1px solid var(--line);padding:7px 9px;text-align:left}
+  th{color:var(--muted);font-weight:500;background:#fafbfe}
+  .ok{color:var(--green);font-weight:600}.bad{color:var(--red);font-weight:600}
+  .tag{display:inline-block;padding:2px 9px;border-radius:12px;font-size:12px;
+       background:#e8effd;color:var(--blue)}
+  svg{width:100%;height:auto;display:block}
+  .legend{font-size:12px;color:var(--muted);margin-top:8px}
+  .foot{margin-top:30px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+  .empty{color:var(--amber)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title">配载结果看板</h1>
+    <p id="subtitle">聚合数据，加载中…</p>
+  </header>
+
+  <section>
+    <h2>七项指标</h2>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section>
+    <h2>按小时的货源与配载去向</h2>
+    <div class="panel">
+      <div id="timeline"></div>
+      <div class="legend">蓝线为产出格数，绿线为配出格数，红线为未配格数；横轴为天序号（每 24 小时一档）。</div>
+    </div>
+  </section>
+
+  <section class="grid2">
+    <div>
+      <h2>五条硬约束审计</h2>
+      <div class="panel"><table id="audit"></table></div>
+    </div>
+    <div>
+      <h2>未配满提单原因分布</h2>
+      <div class="panel"><table id="reasons"></table>
+        <div class="legend" id="reason-note"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>场景对比与规模曲线</h2>
+    <div class="panel"><table id="scenarios"></table>
+      <div class="legend" id="pareto"></div>
+    </div>
+  </section>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+/* 数据由 build_dashboard.py 注入，页面里没有任何外部请求与 CDN 依赖 */
+const DATA = __DASHBOARD_DATA__;
+
+function el(tag, cls, text){
+  const n=document.createElement(tag);
+  if(cls) n.className=cls;
+  if(text!==undefined && text!==null) n.textContent=String(text);
+  return n;
+}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+function renderCards(cards){
+  const box=document.getElementById('cards');
+  if(!cards||!cards.length){box.innerHTML='<div class="empty">没有指标数据</div>';return;}
+  cards.forEach(c=>{
+    const card=el('div','card');
+    card.appendChild(el('div','name',c['名称']));
+    card.appendChild(el('div','value',c['数值']));
+    card.appendChild(el('div','note',c['口径']));
+    box.appendChild(card);
+  });
+}
+
+function svgLine(series, w, h){
+  const pad={l:52,r:16,t:16,b:34};
+  const all=series.flatMap(s=>s.values);
+  const low=Math.min.apply(null,all), high=Math.max.apply(null,all);
+  const span=(high-low)||1;
+  const pw=w-pad.l-pad.r, ph=h-pad.t-pad.b;
+  const count=Math.max.apply(null,series.map(s=>s.values.length));
+  function xy(i,v){
+    return [pad.l+pw*(i/Math.max(1,count-1)), pad.t+ph*(1-(v-low)/span)];
+  }
+  let out='<svg viewBox="0 0 '+w+' '+h+'" xmlns="http://www.w3.org/2000/svg">';
+  for(let k=0;k<5;k++){
+    const y=pad.t+ph*k/4;
+    out+='<line x1="'+pad.l+'" y1="'+y+'" x2="'+(w-pad.r)+'" y2="'+y+'" stroke="#e3e9f2"/>';
+    out+='<text x="'+(pad.l-6)+'" y="'+(y+4)+'" font-size="10" text-anchor="end">'
+        +(low+span*(1-k/4)).toFixed(0)+'</text>';
+  }
+  series.forEach(s=>{
+    const pts=s.values.map((v,i)=>xy(i,v).map(n=>n.toFixed(1)).join(',')).join(' ');
+    out+='<polyline fill="none" stroke="'+s.color+'" stroke-width="2" points="'+pts+'"/>';
+    s.values.forEach((v,i)=>{
+      const p=xy(i,v);
+      out+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.5" fill="'+s.color+'"/>';
+    });
+  });
+  for(let i=0;i<count;i++){
+    const p=xy(i,low);
+    out+='<text x="'+p[0].toFixed(1)+'" y="'+(h-10)+'" font-size="10" text-anchor="middle">'+i+'</text>';
+  }
+  out+='</svg>';
+  return out;
+}
+
+function renderTimeline(rows){
+  const box=document.getElementById('timeline');
+  if(!rows||!rows.length){box.innerHTML='<div class="empty">没有小时去向数据</div>';return;}
+  box.innerHTML=svgLine([
+    {values:rows.map(r=>r['产出格']),color:'#2563eb'},
+    {values:rows.map(r=>r['配出格']),color:'#15803d'},
+    {values:rows.map(r=>r['未配格']),color:'#dc2626'}
+  ],1080,300);
+}
+
+function table(id, headers, rows, cells){
+  const t=document.getElementById(id);
+  if(!rows||!rows.length){t.innerHTML='<tr><td class="empty">没有数据</td></tr>';return;}
+  let html='<thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    html+='<tr>'+cells(r).map(v=>'<td>'+v+'</td>').join('')+'</tr>';
+  });
+  t.innerHTML=html+'</tbody>';
+}
+
+function render(){
+  if(!DATA || DATA.error){
+    document.getElementById('subtitle').textContent='数据缺失，页面只显示提示';
+    ['cards','timeline','audit','reasons','scenarios'].forEach(id=>{
+      document.getElementById(id).innerHTML='<div class="empty">未找到 dashboard_data.json 的聚合数据，请先运行 python run.py</div>';
+    });
+    return;
+  }
+  document.getElementById('title').textContent=DATA['标题']||'配载结果看板';
+  const scope=DATA['评估范围']||{};
+  document.getElementById('subtitle').textContent=
+    (DATA['说明']||'')+' · 评估范围 '+(scope['开始']||'')+' ~ '+(scope['结束']||'');
+  renderCards(DATA['指标卡']);
+  renderTimeline(DATA['小时去向时间轴']);
+  const audit=DATA['约束审计']||{};
+  table('audit',['约束','检查数','冲突数'],audit['逐条']||[],
+        r=>[esc(r['约束']),esc(r['检查数']),
+            '<span class="'+(r['冲突数']?'bad':'ok')+'">'+esc(r['冲突数'])+'</span>']);
+  table('reasons',['原因','提单数'],DATA['未配满原因分布']||[],
+        r=>[esc(r['原因']),esc(r['提单数'])]);
+  document.getElementById('reason-note').textContent=
+    '未配满提单共 '+(DATA['未配满提单数']||0)+' 张；原因只取自约束与货源耗尽白名单。';
+  table('scenarios',['场景','配满率','时效积压率','成本'],DATA['场景对比']||[],
+        r=>[esc(r['场景']),esc(r['配满率']),esc(r['时效积压率']),esc(r['成本'])]);
+  document.getElementById('pareto').textContent=
+    '非支配采样点：'+((DATA['非支配采样点']||[]).join('、')||'无')+'。'+(DATA['近似前沿说明']||'');
+  const aux=DATA['辅助量']||{};
+  document.getElementById('foot').textContent=
+    '评估范围记录 '+aux['评估范围记录数']+' 行 / 全量 '+aux['全量记录数']+
+    ' 行；评估范围配出 '+aux['评估范围配出方数']+' 立方米 / 产出 '+
+    aux['评估范围产出方数']+' 立方米；完全虚仓 '+aux['完全虚仓张数']+
+    ' 张；密度缺失笔数 '+aux['密度缺失笔数']+'。'+
+    '「未配提单货量」是供给侧剩余，不是提单缺口；提单缺口看虚仓张数与配满率。';
+}
+render();
+</script>
+</body>
+</html>

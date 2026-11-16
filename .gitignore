@@ -1,0 +1,31 @@
+# 结果目录提交给主办方，不进公开仓库；原始资料包数据一律只读引用
+results/
+_prev/
+**/_prev/
+
+# 原始 xlsx 不复制进项目；若误放也不入库
+*.xlsx
+*.xls
+*.xlsm
+
+# Python 缓存与构建产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+build/
+dist/
+
+# 字体缓存与生成期临时文件
+*.ttf
+*.ttc
+*.otf
+*.fon
+.fpdf2/
+~$*
+
+# 日志（结果目录里单独生成）
+*.log

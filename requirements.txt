@@ -1,0 +1,15 @@
+# 依赖（精确版本）
+# 必需：核心链路只读解析 xlsx
+openpyxl==3.1.5
+
+# 可选：规模曲线的统计拟合，缺失时自动退回纯 Python 计算
+numpy==2.5.4
+
+# 可选：规模曲线 PNG / PDF 二级降级渲染，缺失时输出静态 SVG 或数据表
+matplotlib==3.11.2
+
+# 可选：方案报告 PDF（实测可安装并可用系统中文字体），缺失走 HTML/Markdown 降级
+fpdf2==2.9.0
+
+# 明确不引入：pytest / pandas / scipy / ortools / reportlab
+# 自检与单元测试一律使用标准库 unittest；核心算法不依赖求解器或数据框。

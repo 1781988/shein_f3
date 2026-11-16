@@ -1,0 +1,21 @@
+{
+  "data_dir": "../F3_一舱装满_资料包/data",
+  "wide_file": "中东大箱体积_渠道子仓_每小时_1001-1020.xlsx",
+  "bill_file": "提单_1001-1020提交.xlsx",
+  "seed": 20261001,
+  "volume_unit": 10000,
+  "eval_range": {"start": "2026-10-03 00:00", "end_inclusive_hour": "2026-10-17 23:00"},
+  "window_days": 2,
+  "roll_step": "hour",
+  "free_backlog_hours": 24,
+  "scenarios": [
+    {"name": "S1_文档顺序", "priority_order": ["fill", "sensitive", "backlog", "injection", "cost"]},
+    {"name": "S2_成本优先", "priority_order": ["cost", "fill", "sensitive", "backlog", "injection"]},
+    {"name": "S3_时效优先", "priority_order": ["backlog", "fill", "sensitive", "injection", "cost"]}
+  ],
+  "scales": [0.25, 0.5, 1.0],
+  "enable_reassign": true,
+  "strict_no_overwrite": false,
+  "extra_csv_columns": false,
+  "outputs": {"dir": "results", "allocation": "allocation.csv", "indicators": "indicators.csv"}
+}
